@@ -1,31 +1,59 @@
-import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { setReturnTo, clearReturnTo, consumeReturnTo } from '../lib/returnTo'
 import LiquidEther from '../components/LiquidEther'
 import Icon from '../components/Icons'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { signIn, signInWithGoogle } = useAuth()
+  const location = useLocation()
+  const isSignUp = location.pathname === '/signup'
+  const cameFromOrder = location.state?.reason === 'order'
+  const { user, isStaff, signIn, signUp, signInWithGoogle } = useAuth()
+  const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [remember, setRemember] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [info, setInfo] = useState('')
+
+  // Remember the page the user was trying to open (kept across the Google redirect too)
+  useEffect(() => {
+    if (location.state?.from) setReturnTo(location.state.from)
+    else if (!user) clearReturnTo()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once signed in (email, sign-up, or already logged in) leave the login page.
+  // Admin / staff default to /admin; customers go to their saved destination or /.
+  useEffect(() => {
+    if (!user) return
+    const saved = consumeReturnTo()
+    const defaultDest = isStaff || user.email?.toLowerCase() === 'admin@gmail.com' ? '/admin' : '/'
+    navigate(saved || defaultDest, { replace: true })
+  }, [user, isStaff]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    setInfo('')
     setLoading(true)
     try {
-      const { error: authError } = await signIn(email, password)
-      if (authError) {
-        setError(authError.message)
+      if (isSignUp) {
+        const { data, error: authError } = await signUp(email, password, fullName.trim())
+        if (authError) {
+          setError(authError.message)
+        } else if (!data?.session) {
+          setInfo('Akun berhasil dibuat! Cek email Anda dan klik link verifikasi, lalu masuk untuk melengkapi data pengiriman.')
+        }
+        // With a session, the effect above takes over and the user is sent to complete their profile
       } else {
-        navigate('/')
+        const { error: authError } = await signIn(email, password)
+        if (authError) setError(authError.message)
       }
-    } catch (err) {
+    } catch {
       setError('Terjadi kesalahan. Silakan coba lagi.')
     } finally {
       setLoading(false)
@@ -34,10 +62,11 @@ export default function LoginPage() {
 
   const handleGoogleSignIn = async () => {
     setError('')
+    setInfo('')
     try {
       const { error: authError } = await signInWithGoogle()
       if (authError) setError(authError.message)
-    } catch (err) {
+    } catch {
       setError('Google sign-in gagal. Silakan coba lagi.')
     }
   }
@@ -86,20 +115,68 @@ export default function LoginPage() {
 
           {/* Header */}
           <div className="login-header">
-            <h1>Selamat Datang</h1>
-            <p>Masukkan email dan password untuk mengakses akun Anda</p>
+            <h1>{isSignUp ? 'Buat Akun Baru' : 'Selamat Datang'}</h1>
+            <p>
+              {isSignUp
+                ? 'Daftar dengan email Anda untuk mulai memesan banner custom'
+                : 'Masukkan email dan password untuk mengakses akun Anda'}
+            </p>
           </div>
+
+          {/* Why the user landed here */}
+          {cameFromOrder && !error && !info && (
+            <div className="login-notice">
+              <Icon name="lock" size="sm" />
+              <span>Masuk atau buat akun terlebih dahulu untuk mulai memesan banner.</span>
+            </div>
+          )}
 
           {/* Error message */}
           {error && (
             <div className="login-error">
               <Icon name="x" size="sm" />
-              {error}
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Info / success message */}
+          {info && (
+            <div
+              className="login-error"
+              style={{
+                background: 'var(--green-bg)',
+                borderColor: 'var(--green-border)',
+                color: 'var(--green)',
+              }}
+            >
+              <Icon name="check" size="sm" />
+              <span>{info}</span>
             </div>
           )}
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="login-form">
+            {isSignUp && (
+              <div className="form-group">
+                <label className="form-label" htmlFor="login-name">Nama Lengkap</label>
+                <div className="login-input-wrapper">
+                  <span className="login-input-icon">
+                    <Icon name="user" size="sm" />
+                  </span>
+                  <input
+                    id="login-name"
+                    type="text"
+                    className="form-input"
+                    placeholder="Nama lengkap Anda"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    required
+                    autoComplete="name"
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="form-group">
               <label className="form-label" htmlFor="login-email">Email</label>
               <div className="login-input-wrapper">
@@ -139,7 +216,8 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  autoComplete="current-password"
+                  minLength={6}
+                  autoComplete={isSignUp ? 'new-password' : 'current-password'}
                 />
                 <button
                   type="button"
@@ -163,14 +241,16 @@ export default function LoginPage() {
               </div>
             </div>
 
-            <div className="login-options">
-              <label className="login-checkbox">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                <span className="checkmark" />
-                Ingat saya
-              </label>
-              <a href="#" className="login-forgot" onClick={(e) => e.preventDefault()}>Lupa Password?</a>
-            </div>
+            {!isSignUp && (
+              <div className="login-options">
+                <label className="login-checkbox">
+                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                  <span className="checkmark" />
+                  Ingat saya
+                </label>
+                <a href="#" className="login-forgot" onClick={(e) => e.preventDefault()}>Lupa Password?</a>
+              </div>
+            )}
 
             <button
               type="submit"
@@ -179,6 +259,8 @@ export default function LoginPage() {
             >
               {loading ? (
                 <span className="login-spinner" />
+              ) : isSignUp ? (
+                'Daftar Akun'
               ) : (
                 'Masuk'
               )}
@@ -191,7 +273,7 @@ export default function LoginPage() {
           </div>
 
           {/* Google sign in */}
-          <button className="login-google-btn" onClick={handleGoogleSignIn}>
+          <button type="button" className="login-google-btn" onClick={handleGoogleSignIn}>
             <svg width="20" height="20" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
@@ -201,9 +283,13 @@ export default function LoginPage() {
             Masuk dengan Google
           </button>
 
-          {/* Sign up link */}
+          {/* Switch between Login / Sign up */}
           <div className="login-footer">
-            Belum punya akun? <Link to="/signup"><strong>Daftar</strong></Link>
+            {isSignUp ? (
+              <>Sudah punya akun? <Link to="/login" state={location.state} onClick={() => { setError(''); setInfo('') }}><strong>Masuk</strong></Link></>
+            ) : (
+              <>Belum punya akun? <Link to="/signup" state={location.state} onClick={() => { setError(''); setInfo('') }}><strong>Daftar</strong></Link></>
+            )}
           </div>
         </div>
       </div>

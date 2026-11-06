@@ -5,7 +5,7 @@ const steps = [
   { path: '/', label: 'Ukuran Banner' },
   { path: '/order', label: 'Kustomisasi & Desain' },
   { path: '/preview', label: 'Preview Desain' },
-  { path: '/checkout', label: 'Checkout & Pengiriman' },
+  { path: '/checkout', label: 'Konfirmasi Pesanan' },
 ]
 
 export default function Stepper() {

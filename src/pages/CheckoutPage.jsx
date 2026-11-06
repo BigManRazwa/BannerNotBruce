@@ -1,253 +1,201 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Icon from '../components/Icons'
-import { useOrder, SIZES, MATERIALS, formatIDR } from '../context/OrderContext'
+import { useOrder, SIZES, MATERIALS, GROMMETS, formatIDR } from '../context/OrderContext'
+import { useAuth } from '../context/AuthContext'
+import { createOrder } from '../lib/orders'
+import { TURNAROUNDS } from '../lib/orderStatus'
 
 export default function CheckoutPage() {
   const navigate = useNavigate()
-  const { order, updateOrder, getPrice } = useOrder()
+  const { order, getPrice, resetOrder } = useOrder()
+  const { user, profile } = useAuth()
   const price = getPrice()
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+
   const size = order.selectedSize !== null ? SIZES[order.selectedSize] : SIZES[1]
-  const [showModal, setShowModal] = useState(false)
+  const material = MATERIALS[order.selectedMaterial] || MATERIALS[0]
+  const grommet = GROMMETS[order.selectedGrommet] || GROMMETS[0]
+  const turnaround = TURNAROUNDS[order.selectedTurnaround] || TURNAROUNDS[0]
+  const hasDesign = !!(order.uploadedFile && order.uploadedFileUrl)
+  const isImage = order.uploadedFile?.type?.startsWith('image/')
+
+  const bannerDim = size.isCustom
+    ? `${order.customWidth || 100} × ${order.customHeight || 200} cm (Custom)`
+    : size.name
+
+  const handleSubmit = async () => {
+    if (!hasDesign || submitting) return
+    setSubmitting(true)
+    setError('')
+    try {
+      const created = await createOrder({ order, profile, user })
+      resetOrder()
+      navigate(`/pesanan/${created.order_code}`, { replace: true, state: { justCreated: true } })
+    } catch (err) {
+      setError(err.message || 'Gagal mengirim pesanan. Silakan coba lagi.')
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="page active">
       <div className="container">
         <div className="checkout-header">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16 }}>
-            <div>
-              <div className="preflight-badge"><Icon name="check" size="sm" /> PREFLIGHT TERVERIFIKASI • JOB ID #BCP-0921-X</div>
-              <h2>Finalisasi Pesanan Cetak</h2>
-              <p className="checkout-desc">Periksa spesifikasi produk, alamat pengiriman, dan lakukan pembayaran.</p>
-            </div>
-            <div className="preflight-ready"><Icon name="checkCircle" size="sm" /> Pre-Flight File Siap</div>
-          </div>
+          <div className="preflight-badge"><Icon name="checkCircle" size="sm" /> LANGKAH 4 DARI 4 — KONFIRMASI</div>
+          <h2>Konfirmasi Pesanan</h2>
+          <p className="checkout-desc">
+            Periksa kembali spesifikasi, file desain, dan alamat Anda. Setelah dikirim, pesanan langsung masuk ke antrean produksi.
+          </p>
         </div>
 
         <div className="checkout-layout">
           <div className="checkout-main">
 
-            {/* 1. Contact */}
+            {!hasDesign && (
+              <div className="print-notes" style={{ alignItems: 'center' }}>
+                <Icon name="upload" size="sm" />
+                <span style={{ flex: 1 }}>
+                  Belum ada file desain. Upload desain Anda terlebih dahulu sebelum mengirim pesanan.
+                  {order.selectedSize !== null && ' (File perlu diupload ulang jika halaman sempat dimuat ulang.)'}
+                </span>
+                <button className="btn btn-outline btn-sm" onClick={() => navigate('/preview')}>Upload Desain</button>
+              </div>
+            )}
+
+            {/* 1. Specs */}
             <div className="card">
               <div className="card-header">
-                <div className="card-title"><span className="step-num">1</span>Proof Digital & Kontak</div>
-                <span className="badge badge-green badge-sm"><Icon name="lock" size="sm" /> PDF Instan</span>
+                <div className="card-title"><span className="step-num">1</span>Spesifikasi Banner</div>
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/order')}>
+                  <Icon name="edit" size="sm" /> Ubah
+                </button>
               </div>
-              <div className="input-row">
-                <div className="form-group">
-                  <label className="form-label">Alamat Email *</label>
-                  <input className="form-input" type="email" placeholder="nama@perusahaan.co.id" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Telepon / WhatsApp (SMS) *</label>
-                  <input className="form-input" type="tel" placeholder="+62 812 3456 7890" />
+              <div className="status-spec-grid">
+                <div className="status-spec-item"><span className="spec-k">Dimensi Banner</span><strong className="spec-v">{bannerDim}</strong></div>
+                <div className="status-spec-item"><span className="spec-k">Jumlah Cetak</span><strong className="spec-v">{order.quantity} Pcs</strong></div>
+                <div className="status-spec-item"><span className="spec-k">Material</span><strong className="spec-v">{material.name}</strong></div>
+                <div className="status-spec-item"><span className="spec-k">Finishing &amp; Grommet</span><strong className="spec-v">{grommet.name}</strong></div>
+                <div className="status-spec-item" style={{ gridColumn: '1 / -1' }}>
+                  <span className="spec-k">Kecepatan Produksi</span><strong className="spec-v">{turnaround.label}</strong>
                 </div>
               </div>
-              <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 10 }}>
-                Bukti cetak resolusi tinggi & PDF vektor akan dikirim ke email di atas sebelum produksi.
-              </p>
+              {order.productionNotes && (
+                <div className="print-notes" style={{ marginTop: 14 }}>
+                  <Icon name="fileText" size="sm" />
+                  <span><strong>Catatan Produksi:</strong> {order.productionNotes}</span>
+                </div>
+              )}
             </div>
 
-            {/* 2. Delivery */}
+            {/* 2. Design */}
             <div className="card">
               <div className="card-header">
-                <div className="card-title"><span className="step-num">2</span>Alamat Pengiriman</div>
-                <span className="badge badge-blue badge-sm"><Icon name="clock" size="sm" /> Estimasi Paket</span>
+                <div className="card-title"><span className="step-num">2</span>File Desain</div>
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/preview')}>
+                  <Icon name={hasDesign ? 'refreshCw' : 'upload'} size="sm" /> {hasDesign ? 'Ganti' : 'Upload'}
+                </button>
               </div>
-              <div className="input-row">
-                <div className="form-group">
-                  <label className="form-label">Nama Lengkap *</label>
-                  <input className="form-input" type="text" placeholder="Nama penerima" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Perusahaan / Organisasi</label>
-                  <input className="form-input" type="text" placeholder="PT / CV / Organisasi" />
-                </div>
-              </div>
-              <div className="form-group" style={{ marginTop: 14 }}>
-                <label className="form-label">Alamat Lengkap *</label>
-                <input className="form-input" type="text" placeholder="Jalan, nomor rumah, RT/RW" />
-              </div>
-              <div className="input-row" style={{ marginTop: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Gedung / Lantai</label>
-                  <input className="form-input" type="text" placeholder="Gedung A Lt. 3" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Kota *</label>
-                  <input className="form-input" type="text" placeholder="Jakarta Selatan" />
-                </div>
-              </div>
-              <div className="input-row" style={{ marginTop: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Provinsi *</label>
-                  <select className="form-select">
-                    <option value="">Pilih Provinsi</option>
-                    {['DKI Jakarta', 'Jawa Barat', 'Jawa Tengah', 'Jawa Timur', 'Bali', 'Sumatera Utara', 'Sulawesi Selatan', 'Kalimantan Timur'].map(p => (
-                      <option key={p}>{p}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Kode Pos *</label>
-                  <input className="form-input" type="text" placeholder="12345" />
-                </div>
-              </div>
-            </div>
-
-            {/* 3. Shipping */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title"><span className="step-num">3</span>Kecepatan Pengiriman & Kurir</div>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Est. Kirim: Besok 14:00</span>
-              </div>
-              <div className="shipping-options">
-                {[
-                  { name: 'Pengiriman Standar', badge: 'Rekomendasi', badgeColor: 'badge-green', desc: '3-5 hari kerja via JNE/J&T Regular. Packing kardus tebal.', est: 'Est. Tiba: Senin, 3 November', price: 'GRATIS', free: true },
-                  { name: 'Express 2 Hari', desc: 'Dijamin tiba dalam 2 hari kerja. Kurir express tracking real-time.', est: 'Est. Tiba: Rabu, 29 Oktober', price: '+Rp 45.000' },
-                  { name: 'Priority Same-Day', badge: 'Prioritas', badgeColor: 'badge-red', desc: 'Cetak langsung, kurir antar ke alamat. Area Jabodetabek.', est: 'Est. Tiba: Hari ini, sebelum 18:00', price: '+Rp 85.000' },
-                ].map((opt, i) => (
-                  <div
-                    key={i}
-                    className={`shipping-option ${order.selectedShipping === i ? 'selected' : ''}`}
-                    onClick={() => updateOrder({ selectedShipping: i })}
-                  >
-                    <div className="shipping-radio" />
-                    <div className="shipping-info">
-                      <h5>
-                        {opt.name}
-                        {opt.badge && <span className={`badge ${opt.badgeColor} badge-sm`}>{opt.badge}</span>}
-                      </h5>
-                      <p>{opt.desc}</p>
-                      <span className="est">{opt.est}</span>
-                    </div>
-                    <span className={`shipping-price ${opt.free ? 'free' : ''}`}>{opt.price}</span>
+              {hasDesign ? (
+                <div className="uploaded-file" style={{ marginTop: 0 }}>
+                  <div className="file-icon" style={isImage ? { padding: 0, overflow: 'hidden' } : undefined}>
+                    {isImage
+                      ? <img src={order.uploadedFileUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <Icon name="file" />}
                   </div>
-                ))}
-              </div>
+                  <div className="file-info">
+                    <div className="file-name">{order.uploadedFile.name}</div>
+                    <div className="file-meta">{(order.uploadedFile.size / (1024 * 1024)).toFixed(1)} MB</div>
+                  </div>
+                  <div className="file-status validated"><Icon name="check" size="sm" /> Siap dikirim</div>
+                </div>
+              ) : (
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>Belum ada file.</p>
+              )}
             </div>
 
-            {/* 4. Payment */}
+            {/* 3. Contact & shipping */}
             <div className="card">
               <div className="card-header">
-                <div className="card-title"><span className="step-num">4</span>Pembayaran</div>
-                <span className="badge badge-green badge-sm"><Icon name="lock" size="sm" /> 256-BIT SSL</span>
+                <div className="card-title"><span className="step-num">3</span>Kontak &amp; Alamat Pengiriman</div>
+                <button className="btn btn-secondary btn-sm" onClick={() => navigate('/profil', { state: { from: '/checkout' } })}>
+                  <Icon name="edit" size="sm" /> Ubah
+                </button>
               </div>
-              <div className="payment-tabs">
-                {['Kartu', 'Transfer Bank', 'E-Wallet', 'QRIS'].map((tab, i) => (
-                  <button
-                    key={i}
-                    className={`payment-tab ${order.paymentMethod === i ? 'active' : ''}`}
-                    onClick={() => updateOrder({ paymentMethod: i })}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-              <div className="card-brands">
-                <span className="form-label" style={{ margin: 0 }}>Kartu Diterima</span>
-                {['VISA', 'MasterCard', 'JCB', 'BCA', 'Mandiri'].map(b => (
-                  <span key={b} className="card-brand">{b}</span>
-                ))}
-              </div>
-              <div className="form-group" style={{ marginBottom: 14 }}>
-                <label className="form-label">Nomor Kartu *</label>
-                <input className="form-input" type="text" placeholder="4211  ****  ****  8129" />
-              </div>
-              <div className="input-row" style={{ marginBottom: 14 }}>
-                <div className="form-group">
-                  <label className="form-label">Tanggal Kadaluarsa *</label>
-                  <input className="form-input" type="text" placeholder="MM / YY" />
+              <div className="status-spec-grid">
+                <div className="status-spec-item">
+                  <span className="spec-k">Nama Pemesan</span>
+                  <strong className="spec-v">{profile.full_name}</strong>
+                  {profile.company && <span className="spec-sub">{profile.company}</span>}
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Kode Keamanan (CVV) *</label>
-                  <input className="form-input" type="text" placeholder="***" />
+                <div className="status-spec-item">
+                  <span className="spec-k">WhatsApp &amp; Email</span>
+                  <strong className="spec-v">{profile.phone}</strong>
+                  <span className="spec-sub">{user?.email}</span>
                 </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Nama di Kartu *</label>
-                <input className="form-input" type="text" placeholder="NAMA LENGKAP" />
-              </div>
-              <div className="checkbox-row" onClick={() => updateOrder({ billingCheckbox: !order.billingCheckbox })}>
-                <div className={`checkbox-box ${order.billingCheckbox ? 'checked' : ''}`}>
-                  {order.billingCheckbox && (
-                    <svg viewBox="0 0 24 24" width="12" height="12"><polyline points="20 6 9 17 4 12" fill="none" stroke="currentColor" strokeWidth="3" /></svg>
-                  )}
+                <div className="status-spec-item" style={{ gridColumn: '1 / -1' }}>
+                  <span className="spec-k">Alamat Pengiriman</span>
+                  <strong className="spec-v">{profile.address}</strong>
+                  <span className="spec-sub">
+                    {profile.city}, {profile.province} {profile.postal_code}
+                    {profile.address_notes && ` — ${profile.address_notes}`}
+                  </span>
                 </div>
-                <span>Alamat penagihan sama dengan alamat pengiriman</span>
               </div>
             </div>
           </div>
 
-          {/* CHECKOUT SIDEBAR */}
+          {/* SIDEBAR */}
           <div className="checkout-sidebar">
             <div className="summary-card">
               <div className="summary-header">
-                <h3><Icon name="fileText" size="sm" /> Ringkasan Proof</h3>
-                <span className="badge badge-sm badge-blue">1 Item</span>
+                <h3><Icon name="fileText" size="sm" /> Ringkasan Biaya</h3>
+                <span className="badge badge-sm badge-purple">{order.quantity} Item</span>
               </div>
               <div className="summary-body">
-                <div className="checkout-summary-product">
-                  <div className="thumb"><Icon name="grid" size="sm" /></div>
-                  <div className="info">
-                    <h4>Banner Vinyl Custom</h4>
-                    <p>{size.isCustom ? 'Custom' : size.name}</p>
-                    <p style={{ marginTop: 2 }}>{MATERIALS[order.selectedMaterial].name}</p>
-                  </div>
-                </div>
-
                 <div className="summary-lines">
-                  {[
-                    { label: 'Substrat', value: '13oz Matte Heavyweight' },
-                    { label: 'Finishing', value: 'Welded Hem + Grommet' },
-                    { label: 'Pemasangan', value: 'Brass Grommet 60 cm' },
-                    { label: 'Pre-Flight', value: 'Skor 98 / 300 DPI' },
-                  ].map((line, i) => (
-                    <div key={i} className="summary-line">
-                      <span className="label">{line.label}</span>
-                      <span className="value" style={{ fontSize: 12 }}>{line.value}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <hr className="summary-divider" />
-
-                <div className="print-notes" style={{ marginBottom: 14 }}>
-                  <Icon name="fileText" size="sm" />
-                  <span>Catatan cetak akan diverifikasi sebelum produksi dimulai.</span>
-                </div>
-
-                <div className="summary-lines">
-                  <div className="summary-line"><span className="label">Subtotal ({order.quantity} Unit)</span><span className="value">{formatIDR(price.subtotal)}</span></div>
-                  <div className="summary-line"><span className="label">Finishing & Produksi</span><span className="value free">Gratis</span></div>
-                  <div className="summary-line"><span className="label">Pengiriman</span><span className={`value ${price.shipping === 0 ? 'free' : ''}`}>{price.shipping > 0 ? formatIDR(price.shipping) : 'Gratis'}</span></div>
+                  <div className="summary-line"><span className="label">Harga per Pcs</span><span className="value">{formatIDR(price.unitPrice)}</span></div>
+                  <div className="summary-line"><span className="label">Subtotal ({order.quantity} Pcs)</span><span className="value">{formatIDR(price.subtotal)}</span></div>
+                  <div className="summary-line"><span className="label">Finishing &amp; Grommet</span><span className="value free">Termasuk</span></div>
+                  {price.turnExtra > 0 && (
+                    <div className="summary-line"><span className="label">Percepatan Produksi</span><span className="value">{formatIDR(price.turnExtra)}</span></div>
+                  )}
                   <div className="summary-line"><span className="label">Pajak (PPN 11%)</span><span className="value">{formatIDR(price.tax)}</span></div>
                 </div>
-
                 <hr className="summary-divider" />
                 <div className="summary-total" style={{ marginBottom: 4 }}>
-                  <span className="label">Total Pembayaran</span>
+                  <span className="label">Total</span>
                   <span className="amount">{formatIDR(price.total)}</span>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'right' }}>Termasuk packing heavy-duty</div>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'right' }}>
+                  Pembayaran dikonfirmasi oleh tim kami via WhatsApp
+                </div>
               </div>
 
               <div className="summary-actions">
-                <button className="place-order-btn" onClick={() => setShowModal(true)}>
-                  <Icon name="lock" /> Buat Pesanan & Bayar ({formatIDR(price.total)})
+                {error && (
+                  <div className="login-error" style={{ marginBottom: 0 }}>
+                    <Icon name="x" size="sm" /><span>{error}</span>
+                  </div>
+                )}
+                <button className="btn btn-primary btn-lg" onClick={handleSubmit} disabled={!hasDesign || submitting}
+                  style={!hasDesign ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}>
+                  {submitting
+                    ? <><span className="login-spinner" style={{ width: 18, height: 18 }} /> Mengirim pesanan...</>
+                    : <><Icon name="checkCircle" /> Kirim Pesanan</>}
                 </button>
-                <p style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'center', lineHeight: 1.4, marginTop: 4 }}>
-                  Dengan memesan, Anda menyetujui preflight otomatis dan proses produksi sesuai spesifikasi.
-                </p>
+                <button className="btn btn-secondary" onClick={() => navigate('/preview')} disabled={submitting}>
+                  <Icon name="arrowLeft" size="sm" /> Kembali ke Preview
+                </button>
               </div>
             </div>
 
-            {/* Guarantees */}
             <div className="guarantee-list" style={{ marginTop: 16 }}>
               {[
-                { icon: 'checkCircle', title: '100% Garansi Warna CMYK', desc: 'Jika warna menyimpang dari profil ICC, kami cetak ulang gratis.' },
-                { icon: 'clock', title: 'Komitmen Pengiriman Tepat Waktu', desc: 'Jadwal produksi dilacak hingga ke detik terakhir.' },
-                { icon: 'lock', title: 'Pembayaran Terenkripsi', desc: 'Transaksi PCI-DSS Level 1. File artwork diarsip 7 hari.' },
+                { icon: 'checkCircle', title: '100% Garansi Warna CMYK', desc: 'Jika hasil cetak menyimpang dari proof, kami cetak ulang gratis.' },
+                { icon: 'clock', title: 'Status Real-Time', desc: 'Pantau setiap tahapan produksi langsung dari halaman pesanan Anda.' },
+                { icon: 'shieldCheck', title: 'File Desain Aman', desc: 'File disimpan privat dan hanya bisa diakses oleh Anda dan tim produksi.' },
               ].map((g, i) => (
                 <div key={i} className="guarantee-item">
                   <Icon name={g.icon} size="sm" />
@@ -255,33 +203,9 @@ export default function CheckoutPage() {
                 </div>
               ))}
             </div>
-
-            <div className="need-help" style={{ marginTop: 16 }}>
-              <p><Icon name="phone" size="sm" /> Butuh bantuan?</p>
-              <span className="help-phone">0812-BANNER-ID</span>
-            </div>
           </div>
         </div>
       </div>
-
-      {/* Success Modal */}
-      {showModal && (
-        <div className="modal-overlay active">
-          <div className="modal">
-            <div className="success-icon"><Icon name="check" size="xxl" /></div>
-            <h2>Pesanan Berhasil Dibuat!</h2>
-            <p>Terima kasih! Pesanan Anda sedang diproses. Kami akan mengirim konfirmasi dan proof digital ke email Anda dalam beberapa menit.</p>
-            <div className="order-id">#BCP-2026-1027-0921</div>
-            <br />
-            <button className="btn btn-primary btn-lg" onClick={() => { setShowModal(false); navigate('/') }}>
-              <Icon name="arrowLeft" /> Kembali ke Beranda
-            </button>
-            <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 16 }}>
-              Anda dapat melacak status pesanan kapan saja dari halaman utama.
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

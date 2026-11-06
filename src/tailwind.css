@@ -1,0 +1,9 @@
+/*
+  Tailwind v4 — utilities only (no Preflight).
+  The app's own reset & design system live in index.css (unlayered), so they
+  always win over these layered Tailwind utilities. Tailwind is only here so
+  shadcn / React Bits components (e.g. LightRays) work out of the box.
+*/
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);

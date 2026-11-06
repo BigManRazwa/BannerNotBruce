@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { OrderProvider } from './context/OrderContext.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
+import './tailwind.css'
 import './index.css'
 
 createRoot(document.getElementById('root')).render(

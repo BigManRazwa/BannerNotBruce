@@ -10,6 +10,23 @@ export default function OrderPage() {
   const [dragOver, setDragOver] = useState(false)
   const price = getPrice()
   const size = order.selectedSize !== null ? SIZES[order.selectedSize] : SIZES[1]
+  const bannerW = size.isCustom ? (order.customWidth || 100) : size.w
+  const bannerH = size.isCustom ? (order.customHeight || 200) : size.h
+  const sizeLabel = size.isCustom ? `${bannerW} × ${bannerH} cm (Custom)` : size.name
+
+  // Proportional preview box for custom / sidebar preview
+  const aspect = Math.max(20, bannerW) / Math.max(20, bannerH)
+  const previewMaxW = 140
+  const previewMaxH = 76
+  let pW = previewMaxH * aspect
+  let pH = previewMaxH
+  if (pW > previewMaxW) {
+    pW = previewMaxW
+    pH = previewMaxW / aspect
+  }
+  const scaleFactor = Math.min(1, Math.max(0.5, 0.42 + (Math.max(bannerW, bannerH) / 300) * 0.58))
+  const boxW = Math.max(18, Math.round(pW * scaleFactor))
+  const boxH = Math.max(18, Math.round(pH * scaleFactor))
 
   const handleFile = (file) => {
     if (file) {
@@ -33,11 +50,81 @@ export default function OrderPage() {
       <div className="container">
         <div className="page-header">
           <div className="breadcrumb">LANGKAH 2 DARI 4 — KUSTOMISASI PESANAN</div>
-          <h2>Terpilih: {size.isCustom ? 'Ukuran Custom' : size.name} Banner Vinyl Premium</h2>
+          <h2>Terpilih: {sizeLabel} Banner Vinyl Premium</h2>
         </div>
 
         <div className="order-layout">
           <div className="order-main">
+
+            {/* Custom Size Dimensions & Live Visual Preview */}
+            {size.isCustom && (
+              <div className="card">
+                <div className="card-header">
+                  <div className="card-title"><span className="step-num"><Icon name="ruler" size="sm" /></span>Dimensi Ukuran Custom</div>
+                  <span className="badge badge-purple">{bannerW} × {bannerH} cm</span>
+                </div>
+                <div className="order-custom-size-grid">
+                  <div className="order-custom-inputs">
+                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      Masukkan lebar dan tinggi banner sesuai kebutuhan Anda. Bentuk dan estimasi harga akan menyesuaikan secara otomatis.
+                    </p>
+                    <div className="input-row">
+                      <div className="form-group">
+                        <label className="form-label">Lebar Banner (cm)</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          min="20"
+                          max="600"
+                          value={order.customWidth || ''}
+                          placeholder="100"
+                          onChange={e => {
+                            const raw = parseInt(e.target.value, 10)
+                            updateOrder({ customWidth: isNaN(raw) ? 0 : Math.min(600, Math.max(1, raw)) })
+                          }}
+                          onBlur={() => {
+                            if (!order.customWidth || order.customWidth < 20) updateOrder({ customWidth: 20 })
+                          }}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Tinggi Banner (cm)</label>
+                        <input
+                          type="number"
+                          className="form-input"
+                          min="20"
+                          max="600"
+                          value={order.customHeight || ''}
+                          placeholder="200"
+                          onChange={e => {
+                            const raw = parseInt(e.target.value, 10)
+                            updateOrder({ customHeight: isNaN(raw) ? 0 : Math.min(600, Math.max(1, raw)) })
+                          }}
+                          onBlur={() => {
+                            if (!order.customHeight || order.customHeight < 20) updateOrder({ customHeight: 20 })
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="size-card-preview" style={{ margin: 0, height: 110 }}>
+                    <div
+                      className="size-illustration"
+                      style={{
+                        width: boxW,
+                        height: boxH,
+                        borderStyle: 'dashed',
+                        position: 'relative',
+                        transition: 'width 0.2s ease, height 0.2s ease',
+                      }}
+                    />
+                    <span className="size-preview-dim">
+                      {bannerW} × {bannerH} cm ({bannerW >= bannerH ? 'Horizontal' : 'Vertikal'})
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 1. Quantity */}
             <div className="card">
@@ -47,9 +134,9 @@ export default function OrderPage() {
               </div>
               <div className="qty-options">
                 {[
-                  { range: '1-2 PCS', price: size.price || 150000, label: 'Harga Standar', color: 'badge-blue', qty: 1 },
-                  { range: '3-9 PCS', price: Math.round((size.price || 150000) * 0.9), label: 'Hemat 10%', color: 'badge-green', qty: 5, save: Math.round((size.price || 150000) * 0.1) },
-                  { range: '10+ PCS', price: Math.round((size.price || 150000) * 0.8), label: 'Harga Grosir', color: 'badge-purple', qty: 10, save: Math.round((size.price || 150000) * 0.2) },
+                  { range: '1-2 PCS', price: price.basePrice, label: 'Harga Standar', color: 'badge-blue', qty: 1 },
+                  { range: '3-9 PCS', price: Math.round(price.basePrice * 0.9), label: 'Hemat 10%', color: 'badge-green', qty: 5, save: Math.round(price.basePrice * 0.1) },
+                  { range: '10+ PCS', price: Math.round(price.basePrice * 0.8), label: 'Harga Grosir', color: 'badge-purple', qty: 10, save: Math.round(price.basePrice * 0.2) },
                 ].map((opt, i) => (
                   <div
                     key={i}
@@ -221,10 +308,20 @@ export default function OrderPage() {
               </div>
               <div className="summary-body">
                 <div className="summary-product">
-                  <div className="product-thumb"><Icon name="image" size="sm" /></div>
+                  <div className="product-thumb">
+                    <div
+                      className="size-illustration"
+                      style={{
+                        width: Math.max(12, Math.round(boxW * 0.42)),
+                        height: Math.max(12, Math.round(boxH * 0.42)),
+                        borderStyle: 'dashed',
+                        transition: 'width 0.2s ease, height 0.2s ease',
+                      }}
+                    />
+                  </div>
                   <div className="product-info">
                     <h4>Banner Vinyl Custom</h4>
-                    <p>Ukuran: <strong>{size.isCustom ? 'Custom' : size.name}</strong></p>
+                    <p>Ukuran: <strong>{sizeLabel}</strong></p>
                     <p>Material: {MATERIALS[order.selectedMaterial].name}</p>
                   </div>
                 </div>
@@ -263,11 +360,11 @@ export default function OrderPage() {
                   <Icon name="eye" /> Preview Desain
                 </button>
                 <button className="btn btn-green btn-lg" onClick={() => navigate('/checkout')}>
-                  Lanjut ke Checkout <Icon name="arrowRight" />
+                  Lanjut ke Konfirmasi <Icon name="arrowRight" />
                 </button>
                 <div className="summary-note">
-                  <Icon name="shield" size="sm" />
-                  Estimasi pengiriman ke <strong style={{ color: 'var(--text-white)', marginLeft: 4 }}>Jakarta, Rabu, 29 Okt</strong>
+                  <Icon name="clock" size="sm" />
+                  Estimasi selesai cetak <strong style={{ color: 'var(--text-white)', marginLeft: 4 }}>Besok, 14:00 WIB</strong>
                 </div>
               </div>
             </div>
